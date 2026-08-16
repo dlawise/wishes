@@ -147,10 +147,11 @@
   .card-actions{display:flex; border-top:1px solid var(--card-edge);}
   .card-actions button{
     flex:1; background:none; border:none; color:var(--slate); font-family:var(--font-body);
-    font-size:13px; font-weight:600; padding:11px 8px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:12.5px; font-weight:600; padding:11px 6px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;
   }
-  .card-actions button:first-child{border-right:1px solid var(--card-edge);}
+  .card-actions button:not(:last-child){border-right:1px solid var(--card-edge);}
   .card-actions button.draft{color:var(--flame);}
+  .card-actions button.remove-btn{color:var(--coral);}
   .card-actions button:active{background:#ffffff08;}
 
   /* ---------- Draft panel ---------- */
@@ -181,6 +182,11 @@
     background:var(--card); border:1px solid var(--card-edge); color:var(--cream);
   }
   .status-line{font-size:12px; color:var(--slate-dim); margin-top:8px; font-family:var(--font-mono);}
+  .storage-warn{
+    background:#3a2540; border:1px solid #5a3a63; color:#e8b8f0; font-size:12.5px;
+    border-radius:12px; padding:10px 13px; margin-bottom:14px; display:none;
+  }
+  .storage-warn.show{display:block;}
 
   .toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
@@ -208,6 +214,8 @@
 </header>
 
 <div class="wrap">
+
+  <div class="storage-warn" id="storageWarn">Changes here won't be saved for next time on this device — open this from the Claude app/link to keep your list.</div>
 
   <div class="help" id="helpBox">
     <b>Add to your home screen</b>
@@ -279,13 +287,21 @@ let openDraftId = null;
 function $(id){ return document.getElementById(id); }
 
 // ---------- storage ----------
+let storageOk = true;
+function flagStorageIssue(){
+  storageOk = false;
+  const el = document.getElementById('storageWarn');
+  if(el) el.classList.add('show');
+}
 async function loadPeople(){
+  if(typeof window.storage === 'undefined'){ flagStorageIssue(); people = []; return; }
   try{
     const r = await window.storage.get('birthdays', false);
     people = r && r.value ? JSON.parse(r.value) : [];
   }catch(e){ people = []; }
 }
 async function savePeople(){
+  if(typeof window.storage === 'undefined'){ flagStorageIssue(); return; }
   try{ await window.storage.set('birthdays', JSON.stringify(people), false); }
   catch(e){ showToast("Couldn't save — try again"); }
 }
@@ -371,15 +387,16 @@ function renderCard(p){
       </div>
     </div>
     <div class="card-actions">
-      <button class="draft" data-act="draft">✎ Draft message</button>
-      <button data-act="delete">Remove</button>
+      <button class="draft" data-act="draft">✎ Draft</button>
+      <button data-act="edit">Edit</button>
+      <button class="remove-btn" data-act="delete">Remove</button>
     </div>
     <div class="draft-panel" id="panel-${p.id}">
       <div class="tones">
         ${TONES.map(t=>`<button class="tone-chip" data-tone="${t}">${t}</button>`).join('')}
       </div>
       <input class="notes-input" placeholder="Add context for this message (optional)" value="${escapeHtml(p.notes||'')}" data-notesfield>
-      <button class="gen-btn" data-act="generate">Generate message</button>
+      <button class="gen-btn" data-act="generate">✨ Draft it</button>
       <div class="status-line" data-status></div>
       <div class="draft-output" data-output></div>
       <div class="draft-actions" style="display:none;" data-draftactions>
@@ -391,6 +408,7 @@ function renderCard(p){
   `;
 
   card.querySelector('[data-act="draft"]').onclick = ()=> toggleDraft(p.id);
+  card.querySelector('[data-act="edit"]').onclick = ()=> openSheet(p);
   card.querySelector('[data-act="delete"]').onclick = ()=> deletePerson(p.id);
   card.querySelectorAll('.tone-chip').forEach(chip=>{
     chip.onclick = ()=>{
@@ -426,49 +444,60 @@ async function deletePerson(id){
 }
 
 // ---------- message generation ----------
-async function generateMessage(p, card){
+// Runs fully offline — no network call — so it works reliably once
+// this page is saved to your home screen (standalone apps can't reach
+// the AI proxy that only works inside claude.ai).
+const MESSAGE_TEMPLATES = {
+  "Warm & heartfelt": [
+    (n,rel,age)=>`Happy birthday, ${n}! Hope your day is filled with everything that makes you smile.${rel?` It means a lot having you as my ${rel}.`:''}`,
+    (n,rel,age)=>`Happy birthday, ${n}! Wishing you a year ahead that's just as good to you as you are to everyone around you.`,
+    (n,rel,age)=>`Happy birthday, ${n}! Just wanted you to know how much you're appreciated today, and always.${age?` Hope ${age} treats you well.`:''}`,
+    (n,rel,age)=>`Happy birthday, ${n}! Sending you so much love today${rel?` — so glad you're my ${rel}`:''}. Hope it's a great one.`
+  ],
+  "Short & casual": [
+    (n)=>`Happy birthday ${n}! Hope you have a great one.`,
+    (n)=>`Heyy happy birthday ${n}! Hope today's a good one.`,
+    (n)=>`Happy birthday ${n} — hope you're treating yourself today.`,
+    (n)=>`Happy bday ${n}! Hope it's a good one.`
+  ],
+  "Fun & playful": [
+    (n,rel,age)=>`Happy birthday ${n}! 🎉 Go eat some cake, you've earned it.`,
+    (n)=>`It's your day, ${n}! Hope it's ridiculous in the best way. 🎈`,
+    (n,rel,age)=>`Happy birthday ${n}! Hope today comes with zero adulting and all the cake. 🎂`,
+    (n,rel,age)=>`Happy birthday ${n}!${age?` ${age} is looking good on you already.`:''} Go be a little extra today.`
+  ],
+  "Sincere & appreciative": [
+    (n,rel)=>`Happy birthday, ${n}. Grateful to have you in my life — hope today treats you well.${rel?` You're a great ${rel}.`:''}`,
+    (n)=>`Happy birthday ${n}. Just wanted to say thank you for being who you are. Hope you have a wonderful day.`,
+    (n,rel)=>`Happy birthday, ${n}!${rel?` As my ${rel},`:''} you mean a lot, and I hope today reflects that.`,
+    (n)=>`Happy birthday ${n}. Hope you take a moment today to feel as appreciated as you are.`
+  ]
+};
+
+function generateMessage(p, card){
   const tone = card.dataset.selectedTone || 'Warm & heartfelt';
   const notes = card.querySelector('[data-notesfield]').value.trim();
-  const statusEl = card.querySelector('[data-status]');
   const outputEl = card.querySelector('[data-output]');
   const actionsEl = card.querySelector('[data-draftactions]');
-  const genBtn = card.querySelector('[data-act="generate"]');
-
-  genBtn.disabled = true;
-  statusEl.textContent = 'Writing a draft…';
-  outputEl.textContent = '';
-  actionsEl.style.display = 'none';
+  const statusEl = card.querySelector('[data-status]');
 
   const age = turningAge(p);
-  const prompt = `Write a short birthday message for ${p.name}.
-Relationship to me: ${p.rel || 'not specified'}.
-Tone: ${tone}.
-${age ? `They are turning ${age}.` : ''}
-${notes ? `Extra context to weave in naturally if it fits: ${notes}` : ''}
-Keep it to 2-4 sentences. Make it sound like a real person texting, not a greeting card. Do not use emoji unless the tone is "Fun & playful", in which case use at most one. Output only the message text, nothing else — no quotation marks, no preamble.`;
+  const ageStr = age ? `turning ${age}` : '';
+  const options = MESSAGE_TEMPLATES[tone] || MESSAGE_TEMPLATES["Warm & heartfelt"];
 
-  try{
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
-    const data = await response.json();
-    const text = (data.content || []).map(b=>b.text||'').join('').trim();
-    if(!text) throw new Error('empty');
-    outputEl.textContent = text;
-    outputEl.dataset.raw = text;
-    statusEl.textContent = '';
-    actionsEl.style.display = 'flex';
-  }catch(e){
-    statusEl.textContent = "Couldn't generate a draft — try again.";
-  }finally{
-    genBtn.disabled = false;
-  }
+  // avoid repeating the same template twice in a row
+  let idx = Math.floor(Math.random()*options.length);
+  const lastIdx = parseInt(card.dataset.lastTemplateIdx);
+  if(options.length > 1 && idx === lastIdx) idx = (idx+1) % options.length;
+  card.dataset.lastTemplateIdx = idx;
+
+  let base = options[idx](p.name, p.rel, ageStr).replace(/\s+/g,' ').trim();
+  const full = base + (notes ? `\n\nP.S. ${notes}` : '');
+
+  outputEl.textContent = full;
+  outputEl.dataset.raw = full;
+  statusEl.textContent = '';
+  actionsEl.style.display = 'flex';
 }
 
 function copyDraft(card){
@@ -501,13 +530,21 @@ function daysInMonth(month){
   return [31,29,31,30,31,30,31,31,30,31,30,31][month-1];
 }
 
-function openSheet(){
-  $('f_name').value=''; $('f_year').value=''; $('f_rel').value=''; $('f_notes').value='';
-  $('f_month').value='1'; $('f_month').dispatchEvent(new Event('change'));
-  $('sheetTitle').textContent = 'Add birthday';
+let editingId = null;
+
+function openSheet(person){
+  editingId = person ? person.id : null;
+  $('f_name').value = person ? person.name : '';
+  $('f_year').value = person && person.year ? person.year : '';
+  $('f_rel').value = person ? (person.rel||'') : '';
+  $('f_notes').value = person ? (person.notes||'') : '';
+  $('f_month').value = person ? String(person.month) : '1';
+  $('f_month').dispatchEvent(new Event('change'));
+  if(person) $('f_day').value = String(person.day);
+  $('sheetTitle').textContent = person ? 'Edit birthday' : 'Add birthday';
   $('sheetBackdrop').classList.add('open');
 }
-function closeSheet(){ $('sheetBackdrop').classList.remove('open'); }
+function closeSheet(){ $('sheetBackdrop').classList.remove('open'); editingId = null; }
 
 async function saveFromSheet(){
   const name = $('f_name').value.trim();
@@ -519,11 +556,17 @@ async function saveFromSheet(){
   const rel = $('f_rel').value.trim();
   const notes = $('f_notes').value.trim();
 
-  people.push({ id: 'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name, month, day, year, rel, notes });
+  if(editingId){
+    const existing = people.find(p=>p.id===editingId);
+    if(existing){ Object.assign(existing, { name, month, day, year, rel, notes }); }
+  } else {
+    people.push({ id: 'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), name, month, day, year, rel, notes });
+  }
   await savePeople();
+  const wasEditing = !!editingId;
   closeSheet();
   render();
-  showToast('Added ' + name);
+  showToast(wasEditing ? 'Saved' : 'Added ' + name);
 }
 
 // ---------- .ics import ----------
@@ -583,7 +626,7 @@ function showToast(msg){
 
 // ---------- wire up ----------
 $('helpToggle').onclick = ()=> $('helpBox').classList.toggle('open');
-$('addManualBtn').onclick = openSheet;
+$('addManualBtn').onclick = ()=> openSheet();
 $('cancelSheet').onclick = closeSheet;
 $('saveSheet').onclick = saveFromSheet;
 $('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
