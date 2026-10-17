@@ -6,10 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Remembr">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>Remembr — Birthdays</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#171a30">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Remembr</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -192,11 +193,28 @@
   .storage-warn.show{display:block;}
 
   .toast{
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 24px); left:50%; transform:translateX(-50%) translateY(20px);
     background:var(--cream); color:var(--ink); font-size:13.5px; font-weight:600;
     padding:11px 20px; border-radius:30px; opacity:0; pointer-events:none; transition:.25s; z-index:60;
   }
   .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  .tabs{display:flex; gap:8px; margin:0 0 16px;}
+  .tab{flex:1; background:var(--card); border:1px solid var(--card-edge); color:var(--slate); border-radius:12px; padding:11px 8px; font-family:var(--font-body); font-weight:600; font-size:13.5px; cursor:pointer;}
+  .tab.active{background:var(--flame); border-color:var(--flame); color:#1a1500;}
+  .mm-note{background:var(--flame-soft); border:1px solid var(--flame); color:var(--cream); border-radius:12px; padding:11px 14px; font-size:13.5px; margin-bottom:14px; display:none;}
+  .mm-note.show{display:block;}
+  .mm-row{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--card-edge); border-radius:14px; padding:11px 13px; margin-bottom:8px;}
+  .mm-row.done{opacity:.55;}
+  .mm-row input[type=checkbox]{width:18px; height:18px; accent-color:var(--flame); flex:none;}
+  .mm-info{flex:1; min-width:0;}
+  .mm-info b{font-family:var(--font-display); font-weight:600; font-size:15px; display:block;}
+  .mm-info span{font-size:12px; color:var(--slate); font-family:var(--font-mono);}
+  .mm-go{background:var(--flame); color:#1a1500; border:none; border-radius:10px; padding:8px 12px; font-weight:700; font-size:12.5px; cursor:pointer;}
+  .mm-x{background:none; border:none; color:var(--slate-dim); font-size:18px; cursor:pointer; padding:4px 6px;}
+  .ver .mm-info{cursor:pointer;}
+  .ver.viewing{border-color:var(--flame);}
+  .ver-txt{font-size:12.5px; color:var(--slate); line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
 </style>
 </head>
 <body>
@@ -228,7 +246,17 @@
       <li>It'll open full-screen, like an app, from now on.</li>
     </ol>
     <p style="margin-top:10px;"><b>Importing birthdays:</b> in the iOS Calendar app, go to your Birthdays calendar (or Contacts), export it, then use <b>Import .ics</b> below and pick the file. Or just add people by hand.</p>
-    <p style="margin-top:10px; color:var(--slate-dim); font-family:var(--font-mono); font-size:11px;">Build: 2026-08-16</p>
+    <p style="margin-top:10px; color:var(--slate-dim); font-family:var(--font-mono); font-size:11px;">Build: 2026-10-17-gh</p>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn btn-secondary" id="bkBtn" style="padding:10px;">Back up (copy)</button>
+      <button class="btn btn-secondary" id="rsBtn" style="padding:10px;">Restore</button>
+    </div>
+    <p style="margin-top:8px; font-size:12px;">Back up copies your birthdays, recipients and settings so you can paste them into Notes. Restore adds them back, for example on a new phone or link.</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="tabB">Birthdays</button>
+    <button class="tab" id="tabM">New month</button>
   </div>
 
   <div class="add-row">
@@ -238,6 +266,49 @@
   </div>
 
   <div id="listRoot"></div>
+
+  <div id="mmPanel" style="display:none">
+    <div class="mm-note" id="mmNote"></div>
+    <div class="field"><label>Month</label><select id="mm_month"></select></div>
+    <div class="field"><label>Preview (tap a version below to view it)</label><textarea id="mm_text" rows="6" readonly></textarea></div>
+    <div class="row-2">
+      <div class="field"><label>Sign-off</label><input type="text" id="mm_sig"></div>
+      <div class="field"><label>Greeting</label><select id="mm_hi"><option value="0">No name</option><option value="1">Hi + first name</option></select></div>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:6px;">
+      <button class="btn btn-secondary" id="mm_shuffle">Pick 7 random</button>
+      <button class="btn btn-primary" id="mm_next">Message next →</button>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:6px;">
+      <button class="btn btn-primary" id="mm_bulk" style="flex:1;">⚡ Send all via Shortcut</button>
+    </div>
+    <details style="margin:14px 0 4px; color:var(--slate); font-size:13px; line-height:1.6;">
+      <summary style="cursor:pointer; color:var(--cream); font-weight:600;">Set up “Send all via Shortcut” (once)</summary>
+      <ol style="padding-left:18px; margin:8px 0;">
+        <li>In the Shortcuts app tap +, and name it exactly as in the box below.</li>
+        <li>Add <b>Split Text</b> on Shortcut Input, separator <b>Custom</b>: <b>###</b></li>
+        <li>Add <b>Repeat with Each</b> over that list.</li>
+        <li>Inside it add <b>Split Text</b> on Repeat Item, Custom: <b>|</b></li>
+        <li>Add <b>Get Item from List</b> (First Item), then another (Last Item).</li>
+        <li>Add <b>Send Message</b>: message = Last Item, recipient = First Item, Show When Run off.</li>
+      </ol>
+      <p style="margin:0 0 8px;">Each tap of the button sends up to 25 people, with the shuffled versions. Only people with a phone number are included.</p>
+      <div class="field"><label>Shortcut name</label><input type="text" id="mm_sc" placeholder="Remembr Send"></div>
+    </details>
+    <div class="section-label">Versions to shuffle · <span id="mm_cnt"></span></div>
+    <div id="mm_vers"></div>
+    <div class="section-label">Recipients</div>
+    <div id="mm_list"></div>
+    <div class="row-2" style="margin-top:12px;">
+      <div class="field"><label>Name</label><input type="text" id="mm_name" placeholder="e.g. Aunty Bisi"></div>
+      <div class="field"><label>Phone</label><input type="tel" id="mm_phone" placeholder="+44…"></div>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" id="mm_add">+ Add</button>
+      <button class="btn btn-secondary" id="mm_frombd">Add from birthdays</button>
+    </div>
+    <p style="font-size:12.5px; color:var(--slate-dim); line-height:1.55; margin-top:16px;">iOS won’t let a web page send texts on its own, so each one opens in Messages ready to go and you just tap Send.</p>
+  </div>
 
 </div>
 
@@ -643,6 +714,198 @@ function showToast(msg){
   toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
 }
 
+// ---------- New-month messages ----------
+const MM_KEY='remembr_month_v1';
+const MONTH_MSGS=[
+ [`Welcome to the new year {y}!!! It shall be a year of overflowing joy and overflowing blessings for you and your family. You shall excel in everything you do as you trust and obey God. Enjoy a Remarkable {y}`,
+  `Welcome to the new year {y}!!! It shall be a year of Abundance for you and your family. You shall have resounding victories as you depend on God. Enjoy an Extraordinary {y}`],
+ [`Welcome to February!!! You shall see the glory of God. God will make a way out of no way and open giant doors for you this month. You are unstoppable. Enjoy a Faith-filled February`,
+  `Welcome to the new month!!! God has gone ahead of you to make your paths straight. You shall enjoy open heavens and increase on every side. Have a Favour-filled February`],
+ [`Welcome to the month of March!!! You shall make unbelievable progress and advance unto greater heights in everything you do this month. This is your turn to shine. Enjoy a Matchless March`,
+  `Happy New month!!! In this month, may you march ahead and stay ahead in every area of your life. You will be unstoppable like David, unshakeable like Daniel and you will make unparalleled progress. Enjoy a Matchless March`],
+ [`Happy new month of\nA - Abundance\nP - Possibilities\nR - Results\nI - Increase\nL - Landmark Achievements\nEnjoy an Amazing April`,
+  `Welcome to April!!! May the Lord open the heavens over you. You shall be satisfied with his mercy and excel on every side. Enjoy an Amazing April`],
+ [`Welcome to the month of May!!! The Lord will give you grace and glory. You will receive every good thing you desire with great speed. Enjoy a Marvellous May`,
+  `Welcome to the month of May!!! Multiple blessings shall be your portion, God's grace and favour shall surround you as a shield. Enjoy a Miraculous May`],
+ [`Welcome to the sixth month!!! Your month of Divine visitation and Supernatural accomplishments. The Lord will surround you with favour like a shield. Enjoy a Joyous June`,
+  `Welcome to June!!! Your season of increase is here. May the Lord increase you greatly and be gracious to you and your family. Enjoy a Jubilant June`],
+ [`Welcome to July!!! May this 2nd half be much better and greater than the 1st half for you. May the Lord perfect all that concerns you and fulfill all your plans. Enjoy a Jubilant July`,
+  `Welcome to the second half of the year!!! May it be a season of possibilities, testimonies, outstanding victories and celebration for you and your family. Have a perfect Joyful July`],
+ [`Welcome to August!!! It's a new beginning and a new season for you. Fresh ideas and brand new things are flowing your way. Enjoy an Amazing August`,
+  `Welcome to month number 8!!! This is your season of New Beginnings. You shall have a victorious fresh start because you are on the winning side with God. Enjoy August with an Advantage`],
+ [`Welcome to September!!! You shall be exceedingly fruitful and abundantly blessed because God is sending you marvellous help this month. Enjoy a Splendid September`,
+  `Welcome to September!!! This is your season of fruitfulness. There will be no more delay and stagnancy in your life. You will prosper and sing for joy. Enjoy a Super September`],
+ [`Welcome to October!!! Your path is filled with blessings beyond measure. It's your month of Double grace and Double favour. Enjoy an Outstanding October`,
+  `Welcome to October and the last quarter of the year!!! May this be a month of double grace and double glory for you. Divine enlargement and multiplication will be your portion. Enjoy an Outstanding October`],
+ [`Welcome to the 11th month!!! May the God of the eleventh hour embarrass you with notable miracles and make you rejoice with unspeakable and overflowing joy. Enjoy a Notable November`,
+  `Welcome to November!!! May this be your month of celebration and good tidings. May the God of the eleventh hour show up and open doors in your favour. Enjoy a Notable November`],
+ [`Praise God we made it to December!!! Welcome to your best month as the Lord crowns your year with his goodness and overflowing abundance. It's your season of celebration and resounding victory. Merry Christmas in advance`,
+  `Praise God we made it to December!!! May the Lord crown the year with his goodness for you. The glory of this month shall be greater than the former months and you will finish strong. Merry Christmas in advance`]
+];
+let mm={contacts:[], sig:'xx Funke', hi:false};
+let mmMonth=new Date().getMonth(), mmVar=new Date().getFullYear()%2;
+
+function mmLoad(){ try{ const r=localStorage.getItem(MM_KEY); if(r) mm=Object.assign(mm,JSON.parse(r)); }catch(e){} }
+function mmSave(){ try{ localStorage.setItem(MM_KEY,JSON.stringify(mm)); }catch(e){ flagStorageIssue(); } }
+function mmKey(){ return new Date().getFullYear()+'-'+(mmMonth+1); }
+function mmNowKey(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1); }
+let mmView=0;
+const ORD=['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th','11th','12th'];
+const BLESS=[
+ 'May the Lord surround you with favour like a shield.',
+ 'Double grace, double blessings and double honour is your portion.',
+ 'You shall make unstoppable progress in every area of your life.',
+ 'God has gone ahead of you to make your paths straight.',
+ 'Open doors of favour and increase on every side is your portion.',
+ 'May the Lord perfect all that concerns you and fulfil all your plans.',
+ 'You shall excel in everything you do as you trust and obey God.',
+ 'May this be a month of good news for you and your family.',
+ 'Fresh ideas and brand new things are flowing your way.',
+ 'You will be satisfied with his mercy and excel on every side.',
+ 'May the God of the eleventh hour show up for you this season.',
+ 'Divine enlargement and multiplication will be your portion.',
+ 'You shall see the glory of God and enjoy open heavens.',
+ 'The Lord will give you grace and glory and every good thing you desire.',
+ 'May your days be filled with celebrations and amazing testimonies.',
+ 'Overflowing joy and peace is your portion.',
+ 'You will prosper and sing for joy.'
+];
+const ADJ=[
+ ['Remarkable','Exciting','Extraordinary'],['Fantastic','Faith-filled','Favour-filled'],
+ ['Marvellous','Matchless','Magnificent'],['Amazing','Abundant','Awesome'],
+ ['Marvellous','Miraculous','Mighty'],['Joyous','Jubilant','Joyful'],
+ ['Jubilant','Joyful','Joyous'],['Amazing','Awesome','Abundant'],
+ ['Super','Splendid','Spectacular'],['Outstanding','Overflowing','Open-heaven'],
+ ['Notable','Noteworthy','Nice'],['Delightful','Dazzling','Divine']
+];
+function mmArt(w){ return /^[aeiou]/i.test(w)?'an':'a'; }
+function mmGen(m,k){
+  const M=MONTHS[m], j=k-2;
+  const ops=m===0?['Welcome to the new year {y}!!!','Happy new year!!!','Glory to God for a brand new year!!!']
+    :m===11?['Praise God we made it to December!!!','Welcome to December!!!','Glory to God we are in December!!!']
+    :[`Welcome to ${M}!!!`,'Happy new month!!!',`Praise God we are in ${M}!!!`,`Welcome to the month of ${M}!!!`,`Glory to God we are in the ${ORD[m]} month!!!`];
+  const b1=BLESS[(m*3+j*2)%BLESS.length], b2=BLESS[(m*3+j*2+5+j)%BLESS.length];
+  const a=ADJ[m][j%ADJ[m].length];
+  const end=m===11?`Have ${mmArt(a)} ${a} December. Merry Christmas in advance`:`Enjoy ${mmArt(a)} ${a} ${m===0?'{y}':M}`;
+  return `${ops[j%ops.length]} ${b1} ${b2} ${end}`;
+}
+function mmVersions(m){ const o=MONTH_MSGS[m].slice(); for(let k=2;k<10;k++) o.push(mmGen(m,k)); return o; }
+function mmText(m,i){ const v=mmVersions(m); return v[i%v.length].split('{y}').join(new Date().getFullYear())+(mm.sig?' '+mm.sig:''); }
+function mmPool(m){ return (mm.pick&&mm.pick[m]&&mm.pick[m].length)?mm.pick[m]:[0,1,2,3,4,5,6]; }
+function mmAssign(c){
+  const key=mmKey(); mm.assign=mm.assign||{};
+  const a=(mm.assign[key]=mm.assign[key]||{}), pool=mmPool(mmMonth);
+  if(a[c.id]!=null && pool.includes(a[c.id])) return a[c.id];
+  const cnt={}; pool.forEach(i=>cnt[i]=0);
+  Object.values(a).forEach(i=>{ if(cnt[i]!=null) cnt[i]++; });
+  const min=Math.min(...pool.map(i=>cnt[i])), opts=pool.filter(i=>cnt[i]===min);
+  a[c.id]=opts[Math.floor(Math.random()*opts.length)];
+  return a[c.id];
+}
+function mmVers(){
+  const box=$('mm_vers'); box.innerHTML='';
+  const pool=mmPool(mmMonth), all=mmVersions(mmMonth);
+  $('mm_cnt').textContent=pool.length+' of '+all.length+' selected';
+  all.forEach((t,i)=>{
+    const row=document.createElement('div');
+    row.className='mm-row ver'+(i===mmView?' viewing':'');
+    row.innerHTML=`<input type="checkbox" ${pool.includes(i)?'checked':''}><div class="mm-info"><div class="ver-txt">${escapeHtml(t.split('{y}').join(new Date().getFullYear()))}</div></div>`;
+    row.querySelector('input').onchange=e=>{
+      const cur=mmPool(mmMonth).slice();
+      if(!e.target.checked && cur.length<=1){ e.target.checked=true; showToast('Keep at least one version'); return; }
+      mm.pick=mm.pick||{};
+      mm.pick[mmMonth]=e.target.checked?[...new Set([...cur,i])].sort((x,y)=>x-y):cur.filter(x=>x!==i);
+      mmSave(); mmVers();
+    };
+    row.querySelector('.mm-info').onclick=()=>{ mmView=i; mmFill(); mmVers(); };
+    box.appendChild(row);
+  });
+}
+function mmFill(){
+  $('mm_text').value=mmText(mmMonth,mmView);
+}
+function mmSend(c){
+  const first=c.name.trim().split(/\s+/)[0];
+  const text=(mm.hi?`Hi ${first},\n\n`:'')+mmText(mmMonth,mmAssign(c)).trim();
+  const sep=/iPhone|iPad|iPod/.test(navigator.userAgent)?'&':'?';
+  const num=(c.phone||'').replace(/[^\d+]/g,'');
+  c.sent=mmKey(); mmSave(); mmRender();
+  location.href='sms:'+num+sep+'body='+encodeURIComponent(text);
+}
+function mmRender(){
+  mmVers();
+  const key=mmKey(), on=mm.contacts.filter(c=>c.on!==false);
+  const left=on.filter(c=>c.sent!==key);
+  const leftNow=on.filter(c=>c.sent!==mmNowKey());
+  $('tabM').textContent='New month'+(leftNow.length?' · '+leftNow.length:'');
+  const note=$('mmNote');
+  if(mmMonth===new Date().getMonth() && on.length){
+    note.textContent=left.length?`New month! ${left.length} message${left.length===1?'':'s'} still to send.`:'All sent for this month ✓';
+    note.classList.add('show');
+  } else note.classList.remove('show');
+  const list=$('mm_list'); list.innerHTML='';
+  if(!mm.contacts.length) list.innerHTML='<div class="empty" style="padding:20px;"><p>No recipients yet. Add people below or pull them in from your birthday list.</p></div>';
+  mm.contacts.forEach(c=>{
+    const row=document.createElement('div');
+    row.className='mm-row'+(c.sent===key?' done':'');
+    row.innerHTML=`<input type="checkbox" ${c.on!==false?'checked':''}><div class="mm-info"><b>${escapeHtml(c.name)}</b><span>${c.phone?escapeHtml(c.phone):'no number · tap to add'}</span></div><button class="mm-go">${c.sent===key?'Resend':'Send'}</button><button class="mm-x" aria-label="Remove">✕</button>`;
+    row.querySelector('input').onchange=e=>{ c.on=e.target.checked; mmSave(); mmRender(); };
+    row.querySelector('.mm-info span').onclick=()=>{ const n=prompt('Phone number for '+c.name, c.phone||''); if(n!==null){ c.phone=n.trim(); mmSave(); mmRender(); } };
+    row.querySelector('.mm-go').onclick=()=>mmSend(c);
+    row.querySelector('.mm-x').onclick=()=>{ mm.contacts=mm.contacts.filter(x=>x!==c); mmSave(); mmRender(); };
+    list.appendChild(row);
+  });
+}
+function showTab(t){
+  const m=t==='m';
+  $('tabB').classList.toggle('active',!m); $('tabM').classList.toggle('active',m);
+  document.querySelector('.add-row').style.display=m?'none':'flex';
+  $('listRoot').style.display=m?'none':'block';
+  $('mmPanel').style.display=m?'block':'none';
+  if(m) mmRender();
+}
+function mmAdd(name,phone){ mm.contacts.push({id:'c_'+Date.now()+Math.random().toString(36).slice(2,6), name, phone, on:true}); }
+
+mmLoad();
+$('mm_month').innerHTML=MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
+$('mm_month').value=mmMonth;
+$('mm_sig').value=mm.sig; $('mm_hi').value=mm.hi?'1':'0';
+$('tabB').onclick=()=>showTab('b'); $('tabM').onclick=()=>showTab('m');
+$('mm_month').onchange=e=>{ mmMonth=+e.target.value; mmView=0; mmVar=new Date().getFullYear()%2; mmFill(); mmRender(); };
+$('mm_shuffle').onclick=()=>{ const idx=mmVersions(mmMonth).map((_,i)=>i).sort(()=>Math.random()-0.5).slice(0,7).sort((x,y)=>x-y); mm.pick=mm.pick||{}; mm.pick[mmMonth]=idx; mmSave(); mmVers(); showToast('Picked 7 at random'); };
+$('mm_sig').oninput=e=>{ mm.sig=e.target.value; mmSave(); };
+$('mm_sig').onchange=()=>mmFill();
+$('mm_hi').onchange=e=>{ mm.hi=e.target.value==='1'; mmSave(); };
+$('mm_next').onclick=()=>{ const n=mm.contacts.find(c=>c.on!==false && c.sent!==mmKey()); if(!n){ showToast('Everyone’s done for this month ✓'); return; } mmSend(n); };
+$('mm_add').onclick=()=>{
+  const name=$('mm_name').value.trim();
+  if(!name){ showToast('Add a name first'); return; }
+  mmAdd(name,$('mm_phone').value.trim()); $('mm_name').value=''; $('mm_phone').value=''; mmSave(); mmRender();
+};
+$('mm_sc').value=mm.sc||'Remembr Send';
+$('mm_sc').oninput=e=>{ mm.sc=e.target.value; mmSave(); };
+$('mm_bulk').onclick=()=>{
+  const key=mmKey();
+  const todo=mm.contacts.filter(c=>c.on!==false && c.sent!==key);
+  const ready=todo.filter(c=>(c.phone||'').replace(/[^\d+]/g,'')).slice(0,25);
+  if(!ready.length){ showToast(todo.length?'Add phone numbers first':'Everyone’s done for this month ✓'); return; }
+  const recs=ready.map(c=>{
+    const first=c.name.trim().split(/\s+/)[0];
+    const text=(mm.hi?`Hi ${first},\n\n`:'')+mmText(mmMonth,mmAssign(c)).trim();
+    c.sent=key;
+    return c.phone.replace(/[^\d+]/g,'')+'|'+text;
+  });
+  mmSave(); mmRender();
+  location.href='shortcuts://run-shortcut?name='+encodeURIComponent(mm.sc||'Remembr Send')+'&input=text&text='+encodeURIComponent(recs.join('###'));
+};
+$('mm_frombd').onclick=()=>{
+  let n=0;
+  people.forEach(p=>{ if(!mm.contacts.some(c=>c.name.toLowerCase()===p.name.toLowerCase())){ mmAdd(p.name,''); n++; } });
+  mmSave(); mmRender(); showToast(n?`Added ${n}`:'Nobody new to add');
+};
+mmFill(); mmRender();
+if(new Date().getDate()<=3 && mm.contacts.some(c=>c.on!==false && c.sent!==mmNowKey())) showTab('m');
+
 // ---------- wire up ----------
 $('helpToggle').onclick = ()=> $('helpBox').classList.toggle('open');
 $('addManualBtn').onclick = ()=> openSheet();
@@ -651,6 +914,29 @@ $('saveSheet').onclick = saveFromSheet;
 $('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
 $('importBtn').onclick = ()=> $('icsFile').click();
 $('icsFile').onchange = (e)=>{ if(e.target.files[0]) handleIcsFile(e.target.files[0]); };
+
+$('bkBtn').onclick=()=>{
+  const data=JSON.stringify({app:'remembr',v:1,people,month:mm});
+  navigator.clipboard.writeText(data).then(()=>showToast('Backup copied — paste it into Notes')).catch(()=>{ prompt('Copy this backup:',data); });
+};
+$('rsBtn').onclick=async ()=>{
+  const raw=prompt('Paste your backup here'); if(!raw) return;
+  try{
+    const d=JSON.parse(raw); if(d.app!=='remembr') throw new Error('x');
+    (d.people||[]).forEach(np=>{ if(!people.some(p=>p.name.toLowerCase()===np.name.toLowerCase()&&p.month===np.month&&p.day===np.day)) people.push(np); });
+    if(d.month){
+      (d.month.contacts||[]).forEach(nc=>{ if(!mm.contacts.some(c=>c.name.toLowerCase()===nc.name.toLowerCase())) mm.contacts.push(nc); });
+      if(d.month.sig!=null) mm.sig=d.month.sig;
+      if(d.month.sc) mm.sc=d.month.sc;
+      if(d.month.pick) mm.pick=d.month.pick;
+      mm.hi=!!d.month.hi;
+    }
+    await savePeople(); mmSave(); render(); mmRender(); mmFill();
+    $('mm_sig').value=mm.sig; $('mm_sc').value=mm.sc||'Remembr Send'; $('mm_hi').value=mm.hi?'1':'0';
+    showToast('Restored');
+  }catch(e){ showToast('That doesn’t look like a Remembr backup'); }
+};
+if('serviceWorker' in navigator && location.protocol.indexOf('http')===0) navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 fillSelects();
 (async ()=>{
