@@ -245,8 +245,8 @@
       <li>Tap the Share icon, then <b>Add to Home Screen</b>.</li>
       <li>It'll open full-screen, like an app, from now on.</li>
     </ol>
-    <p style="margin-top:10px;"><b>Importing birthdays:</b> in the iOS Calendar app, go to your Birthdays calendar (or Contacts), export it, then use <b>Import .ics</b> below and pick the file. Or just add people by hand.</p>
-    <p style="margin-top:10px; color:var(--slate-dim); font-family:var(--font-mono); font-size:11px;">Build: 2026-10-17-gh</p>
+    <p style="margin-top:10px;"><b>Importing birthdays:</b> in the iOS Calendar app, go to your Birthdays calendar (or Contacts), export it, then use <b>Import file</b> below and pick the .ics file. A contacts file (.vcf, exported from iCloud.com → Contacts → select all → Export vCard) works too and adds anyone who has a birthday. Or just add people by hand.</p>
+    <p style="margin-top:10px; color:var(--slate-dim); font-family:var(--font-mono); font-size:11px;">Build: 2026-10-17-gh2</p>
     <div style="display:flex; gap:8px; margin-top:12px;">
       <button class="btn btn-secondary" id="bkBtn" style="padding:10px;">Back up (copy)</button>
       <button class="btn btn-secondary" id="rsBtn" style="padding:10px;">Restore</button>
@@ -261,8 +261,8 @@
 
   <div class="add-row">
     <button class="btn btn-primary" id="addManualBtn">+ Add birthday</button>
-    <button class="btn btn-secondary" id="importBtn">Import .ics</button>
-    <input type="file" id="icsFile" accept=".ics">
+    <button class="btn btn-secondary" id="importBtn">Import file</button>
+    <input type="file" id="icsFile" accept=".ics,.vcf,text/calendar,text/vcard,text/x-vcard">
   </div>
 
   <div id="listRoot"></div>
@@ -297,7 +297,7 @@
     </details>
     <div class="section-label">Versions to shuffle · <span id="mm_cnt"></span></div>
     <div id="mm_vers"></div>
-    <div class="section-label">Recipients</div>
+    <div class="section-label" style="display:flex; justify-content:space-between; align-items:center;"><span>Recipients</span><span><button class="mm-x" id="mm_all" style="font-size:12px;">All on</button><button class="mm-x" id="mm_none" style="font-size:12px;">All off</button></span></div>
     <div id="mm_list"></div>
     <div class="row-2" style="margin-top:12px;">
       <div class="field"><label>Name</label><input type="text" id="mm_name" placeholder="e.g. Aunty Bisi"></div>
@@ -306,6 +306,10 @@
     <div style="display:flex; gap:10px;">
       <button class="btn btn-primary" id="mm_add">+ Add</button>
       <button class="btn btn-secondary" id="mm_frombd">Add from birthdays</button>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <button class="btn btn-secondary" id="mm_vcf">Import contacts (.vcf)</button>
+      <input type="file" id="vcfFile" accept=".vcf,text/vcard,text/x-vcard">
     </div>
     <p style="font-size:12.5px; color:var(--slate-dim); line-height:1.55; margin-top:16px;">iOS won’t let a web page send texts on its own, so each one opens in Messages ready to go and you just tap Send.</p>
   </div>
@@ -425,18 +429,22 @@ function render(){
     return;
   }
 
-  if(upcoming.length){
+  const groups = [];
+  sorted.forEach(p=>{
+    const d = nextOccurrence(p.month,p.day);
+    const key = d.getFullYear()+'-'+d.getMonth();
+    let g = groups[groups.length-1];
+    if(!g || g.key!==key){ g = {key, d, items:[]}; groups.push(g); }
+    g.items.push(p);
+  });
+  const thisYear = new Date().getFullYear();
+  groups.forEach(g=>{
     const lbl = document.createElement('div');
-    lbl.className='section-label'; lbl.textContent='Next 30 days';
+    lbl.className='section-label';
+    lbl.textContent = MONTHS[g.d.getMonth()] + (g.d.getFullYear()!==thisYear ? ' '+g.d.getFullYear() : '') + ' · ' + g.items.length;
     root.appendChild(lbl);
-    upcoming.forEach(p=>root.appendChild(renderCard(p)));
-  }
-  if(later.length){
-    const lbl = document.createElement('div');
-    lbl.className='section-label'; lbl.textContent='Later';
-    root.appendChild(lbl);
-    later.forEach(p=>root.appendChild(renderCard(p)));
-  }
+    g.items.forEach(p=>root.appendChild(renderCard(p)));
+  });
 }
 
 function renderCard(p){
@@ -649,6 +657,34 @@ async function saveFromSheet(){
   showToast(wasEditing ? 'Saved' : 'Added ' + name);
 }
 
+// ---------- vCard (.vcf) import ----------
+function parseVcf(text){
+  const cards = text.replace(/\r?\n[ \t]/g,'').split(/BEGIN:VCARD/i).slice(1);
+  const out = [], nowY = new Date().getFullYear();
+  cards.forEach(c=>{
+    const get = re => { const m=c.match(re); return m?m[1].trim():''; };
+    let name = get(/^FN[^:\n]*:(.+)$/im);
+    if(!name){ const n=get(/^N[^:\n]*:(.+)$/im).split(';'); name=((n[1]||'')+' '+(n[0]||'')).trim(); }
+    if(!name) name = get(/^ORG[^:\n]*:(.+)$/im).replace(/;/g,' ').trim();
+    if(!name) return;
+    const tels = [...c.matchAll(/^(?:[\w-]+\.)?TEL([^:\n]*):(.+)$/gim)].map(m=>({t:m[1].toLowerCase(), v:m[2].trim()}));
+    const best = tels.find(x=>/cell|mobile|iphone/.test(x.t)) || tels[0];
+    let month=null, day=null, year=null;
+    const bd = c.match(/^(?:[\w-]+\.)?BDAY([^:\n]*):(.+)$/im);
+    if(bd){
+      const m = bd[2].trim().replace(/-/g,'').match(/^(\d{4})?(\d{2})(\d{2})/);
+      if(m){
+        month=parseInt(m[2]); day=parseInt(m[3]);
+        if(month<1||month>12||day<1||day>31){ month=null; day=null; }
+        const y = m[1]?parseInt(m[1]):null;
+        if(month && y && y>=1900 && y<=nowY && !/OMIT-YEAR/i.test(c)) year=y;
+      }
+    }
+    out.push({name, phone: best?best.v:'', month, day, year});
+  });
+  return out;
+}
+
 // ---------- .ics import ----------
 function parseIcs(text){
   const events = text.split('BEGIN:VEVENT').slice(1);
@@ -684,7 +720,7 @@ function parseIcs(text){
 function handleIcsFile(file){
   const reader = new FileReader();
   reader.onload = async (e)=>{
-    const parsed = parseIcs(e.target.result);
+    const txt = e.target.result; const parsed = /BEGIN:VCARD/i.test(txt) ? parseVcf(txt).filter(c=>c.month).map(c=>({name:c.name,month:c.month,day:c.day,year:c.year})) : parseIcs(txt);
     if(parsed.length === 0){
       showToast('No birthdays found in that file');
       return;
@@ -742,10 +778,10 @@ const MONTH_MSGS=[
  [`Praise God we made it to December!!! Welcome to your best month as the Lord crowns your year with his goodness and overflowing abundance. It's your season of celebration and resounding victory. Merry Christmas in advance`,
   `Praise God we made it to December!!! May the Lord crown the year with his goodness for you. The glory of this month shall be greater than the former months and you will finish strong. Merry Christmas in advance`]
 ];
-let mm={contacts:[], sig:'xx Funke', hi:false};
+let mm={contacts:[], sig:'xx EiMAGiNE', hi:false};
 let mmMonth=new Date().getMonth(), mmVar=new Date().getFullYear()%2;
 
-function mmLoad(){ try{ const r=localStorage.getItem(MM_KEY); if(r) mm=Object.assign(mm,JSON.parse(r)); }catch(e){} }
+function mmLoad(){ try{ const r=localStorage.getItem(MM_KEY); if(r) mm=Object.assign(mm,JSON.parse(r)); }catch(e){} if(mm.sig==='xx Funke'){ mm.sig='xx EiMAGiNE'; mmSave(); } }
 function mmSave(){ try{ localStorage.setItem(MM_KEY,JSON.stringify(mm)); }catch(e){ flagStorageIssue(); } }
 function mmKey(){ return new Date().getFullYear()+'-'+(mmMonth+1); }
 function mmNowKey(){ const d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1); }
@@ -898,6 +934,25 @@ $('mm_bulk').onclick=()=>{
   mmSave(); mmRender();
   location.href='shortcuts://run-shortcut?name='+encodeURIComponent(mm.sc||'Remembr Send')+'&input=text&text='+encodeURIComponent(recs.join('###'));
 };
+$('mm_all').onclick=()=>{ mm.contacts.forEach(c=>c.on=true); mmSave(); mmRender(); };
+$('mm_none').onclick=()=>{ mm.contacts.forEach(c=>c.on=false); mmSave(); mmRender(); };
+$('mm_vcf').onclick=()=>$('vcfFile').click();
+$('vcfFile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const list=parseVcf(String(r.result));
+    let added=0, filled=0;
+    list.forEach(c=>{
+      const ex=mm.contacts.find(x=>x.name.toLowerCase()===c.name.toLowerCase());
+      if(ex){ if(!ex.phone && c.phone){ ex.phone=c.phone; filled++; } }
+      else { mmAdd(c.name,c.phone); mm.contacts[mm.contacts.length-1].on=false; added++; }
+    });
+    mmSave(); mmRender();
+    showToast(list.length?`Imported ${added} — tick who to message`+(filled?`, updated ${filled}`:''):'No contacts found in that file');
+  };
+  r.readAsText(f); e.target.value='';
+};
 $('mm_frombd').onclick=()=>{
   let n=0;
   people.forEach(p=>{ if(!mm.contacts.some(c=>c.name.toLowerCase()===p.name.toLowerCase())){ mmAdd(p.name,''); n++; } });
@@ -913,7 +968,7 @@ $('cancelSheet').onclick = closeSheet;
 $('saveSheet').onclick = saveFromSheet;
 $('sheetBackdrop').onclick = (e)=>{ if(e.target.id==='sheetBackdrop') closeSheet(); };
 $('importBtn').onclick = ()=> $('icsFile').click();
-$('icsFile').onchange = (e)=>{ if(e.target.files[0]) handleIcsFile(e.target.files[0]); };
+$('icsFile').onchange = (e)=>{ if(e.target.files[0]) handleIcsFile(e.target.files[0]); e.target.value=''; };
 
 $('bkBtn').onclick=()=>{
   const data=JSON.stringify({app:'remembr',v:1,people,month:mm});
@@ -926,7 +981,7 @@ $('rsBtn').onclick=async ()=>{
     (d.people||[]).forEach(np=>{ if(!people.some(p=>p.name.toLowerCase()===np.name.toLowerCase()&&p.month===np.month&&p.day===np.day)) people.push(np); });
     if(d.month){
       (d.month.contacts||[]).forEach(nc=>{ if(!mm.contacts.some(c=>c.name.toLowerCase()===nc.name.toLowerCase())) mm.contacts.push(nc); });
-      if(d.month.sig!=null) mm.sig=d.month.sig;
+      if(d.month.sig!=null) mm.sig=d.month.sig==='xx Funke'?'xx EiMAGiNE':d.month.sig;
       if(d.month.sc) mm.sc=d.month.sc;
       if(d.month.pick) mm.pick=d.month.pick;
       mm.hi=!!d.month.hi;
